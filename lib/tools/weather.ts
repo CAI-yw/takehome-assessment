@@ -43,19 +43,73 @@ export const weatherTool = tool({
   description:
     "Get weather forecast data for a location. Use this when the user asks about weather, temperature, rain, wind, or forecasts for any location.",
   parameters: z.object({
-    // TODO: Define your parameters here
-    // Example:
-    // latitude: z.number().describe("Latitude of the location"),
-    // longitude: z.number().describe("Longitude of the location"),
+    latitude: z.number().describe("Latitude of the location"),
+    longitude: z.number().describe("Longitude of the location"),
+    forecast_days: z.number().min(1).max(7).optional().default(3).describe("Number of days to forecast (1-7)"),
+    daily: z.array(z.string()).optional().default([
+      "temperature_2m_max",
+      "temperature_2m_min",
+      "precipitation_sum",
+      "windspeed_10m_max",
+      "weathercode",
+    ]).describe("Weather variables"),
   }),
   execute: async (params) => {
-    // TODO: Implement the weather data fetching logic
     // 1. Build the API URL with query parameters
+    const BASE_URL = "https://api.open-meteo.com/v1/forecast";
+    const { latitude, longitude, forecast_days, daily } = params;
+
+    const queryParams = new URLSearchParams({
+      latitude: latitude.toString(),
+      longitude: longitude.toString(),
+      forecast_days: forecast_days.toString(),
+      daily: daily.join(","),
+    });
+
+    const url = `${BASE_URL}?${queryParams.toString()}`;
+
     // 2. Fetch data from Open-Meteo
     // 3. Return the parsed response
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Weather API error: ${response.statusText}`);
+      }
+      const data = await response.json();
 
-    return {
-      error: "Weather tool not implemented yet. See TODO comments in lib/tools/weather.ts",
-    };
+      if (!data) {
+        throw new Error("Invalid response format: Missing forecast data");
+      }
+      if (!data.daily) {
+        return data;
+      }
+      // Format forecast data (temperature, precipitation, wind, etc.)
+      const daily = data.daily;
+      const forecast = [];
+
+      for (let i = 0; i < daily.time.length; i++) {
+        forecast.push({
+          date: daily.time[i],
+          maxTemp: daily.temperature_2m_max ? daily.temperature_2m_max[i] : null,
+          minTemp: daily.temperature_2m_min ? daily.temperature_2m_min[i] : null,
+          precipitation: daily.precipitation_sum ? daily.precipitation_sum[i] : null,
+          maxWindSpeed: daily.windspeed_10m_max ? daily.windspeed_10m_max[i] : null,
+          weatherCode: daily.weathercode ? daily.weathercode[i] : null,
+        });
+      }
+
+      const structured_data = {
+        location: {
+          latitude,
+          longitude,
+        },
+        forecast,
+      };
+      return structured_data
+    } catch (error) {
+      return {
+        error: `Failed to fetch weather data: ${error instanceof Error ? error.message : "Unknown error"}`, // Network failure and other errors
+      };
+    }
   },
 });
