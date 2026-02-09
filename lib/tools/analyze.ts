@@ -1,5 +1,6 @@
 import { tool } from "ai";
 import { z } from "zod";
+import { spawnSync } from "child_process";
 
 /**
  * TODO: Implement the code analysis tool
@@ -52,18 +53,48 @@ export const analyzeTool = tool({
   description:
     "Execute Python code for data analysis, calculations, or processing. The LLM writes Python code, and this tool runs it and returns the output.",
   parameters: z.object({
-    // TODO: Define your parameters here
-    // Example:
-    // code: z.string().describe("Python code to execute"),
+    code: z.string().describe("Python code to execute"),
   }),
   execute: async (params) => {
-    // TODO: Implement the Python code execution logic
     // 1. Extract the code from params
+    const { code } = params;
+
     // 2. Execute it with python3
     // 3. Return stdout, stderr, and exit code
+    try {
+      const result = spawnSync("python3", ["-c", code], {
+        encoding: "utf-8",
+        timeout: 10000,              // 10 second timeout
+        maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large outputs
+      });
 
-    return {
-      error: "Analysis tool not implemented yet. See TODO comments in lib/tools/analyze.ts",
+      // Handle errors: Timeout exceeded, or Python not installed
+      if (result.error) {
+        const err = result.error as any;
+        if (err.code === "ETIMEDOUT") {
+          return { error: "Execution timed out (limit: 10s)", stdout: result.stdout, stderr: result.stderr, exitCode: result.status ?? -1 };
+        }
+        if (err.code === "ENOENT") {
+          return { error: "Python not found. Please ensure 'python3' is installed and in your PATH." };
+        }
+        return { error: `Execution failed: ${err.message}`, stdout: result.stdout, stderr: result.stderr, exitCode: result.status ?? -1 };
+      }
+
+      // Handle killed-by-signal cases
+      if (result.status === null) {
+        return { error: `Execution terminated by signal${result.signal ? `: ${result.signal}` : ""}`, stdout: result.stdout, stderr: result.stderr, exitCode: -1 };
+      }
+
+      // Handle syntax or runtime errors
+      if (result.status !== 0) {
+        const stderr = result.stderr || "";
+        const errorType = stderr.includes("SyntaxError:") ? "Syntax Error" : "Runtime Error";
+        return { error: `${errorType}: ${stderr.trim()}`, stdout: result.stdout, stderr: result.stderr, exitCode: result.status };
+      }
+
+      return { stdout: result.stdout, stderr: result.stderr, exitCode: result.status };
+    } catch (e) {
+      return { error: `Unexpected error: ${e instanceof Error ? e.message : String(e)}` };
     };
   },
 });

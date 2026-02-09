@@ -75,37 +75,31 @@ export const weatherTool = tool({
       if (!response.ok) {
         throw new Error(`Weather API error: ${response.statusText}`);
       }
-      const data = await response.json();
 
+      const data = await response.json();
       if (!data) {
         throw new Error("Invalid response format: Missing forecast data");
       }
       if (!data.daily) {
         return data;
       }
+
       // Format forecast data (temperature, precipitation, wind, etc.)
       const daily = data.daily;
-      const forecast = [];
-
-      for (let i = 0; i < daily.time.length; i++) {
-        forecast.push({
-          date: daily.time[i],
+      return {
+        location: {
+          latitude,
+          longitude,
+        },
+        forecast: daily.time.map((date: string, i: number) => ({
+          date,
           maxTemp: daily.temperature_2m_max ? daily.temperature_2m_max[i] : null,
           minTemp: daily.temperature_2m_min ? daily.temperature_2m_min[i] : null,
           precipitation: daily.precipitation_sum ? daily.precipitation_sum[i] : null,
           maxWindSpeed: daily.windspeed_10m_max ? daily.windspeed_10m_max[i] : null,
           weatherCode: daily.weathercode ? daily.weathercode[i] : null,
-        });
-      }
-
-      const structured_data = {
-        location: {
-          latitude,
-          longitude,
-        },
-        forecast,
+        })),
       };
-      return structured_data
     } catch (error) {
       return {
         error: `Failed to fetch weather data: ${error instanceof Error ? error.message : "Unknown error"}`, // Network failure and other errors
